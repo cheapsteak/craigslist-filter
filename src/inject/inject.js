@@ -9,10 +9,10 @@ var filter = function (blacklist) {
             pool.push(row);
         }
     });
-    pool.forEach(function (row) {
-        //modifying DOM here, might cause a lot of reflows
-        $(row).addClass('cf-filtered-row').highlight(blacklist, { element: 'em', className: 'cf-matched' });
-    });
+
+    $(pool) //modifying DOM. might cause a lot of reflows
+        .addClass('cf-filtered-row')
+        .highlight(blacklist, { element: 'em', className: 'cf-matched' });
 };
 
 function inject (blacklist) {
