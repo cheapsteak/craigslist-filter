@@ -2,8 +2,8 @@
   "name": "Craigslist Filter",
   "version": "0.0.2",
   "manifest_version": 2,
-  "description": "This extension was created with the awesome extensionizr.io",
-  "homepage_url": "http://extensionizr.com",
+  "description": "Filter listings by location and keywords so undesired results don't waste your attention and time.",
+  "homepage_url": "https://github.com/cheapsteak/craigslist-filter",
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
@@ -74,6 +74,8 @@
         "http://*.craigslist.co.za/*"
       ],
       "css": [
+        "css/leaflet.css",
+        "css/leaflet.draw.css",
         "src/inject/inject.css"
       ]
     },
@@ -112,8 +114,17 @@
         "js/jquery.min.js",
         "js/jquery.highlight.js",
         "js/lodash.min.js",
+        "js/leaflet.js",
+        "js/leaflet.draw.js",
+        "js/paper-core.min.js",
         "src/inject/inject.js"
       ]
     }
+  ],
+  "web_accessible_resources" : [
+    "css/leaflet.css",
+    "css/leaflet.draw.css",
+    "images/spritesheet.png",
+    "images/spritesheet-2x.png"
   ]
 }
