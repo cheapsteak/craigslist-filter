@@ -15,3 +15,6 @@
 .cf-filtered-region--fail {
     /*nothing for now*/
 }
+.cf-hidden {
+    display: none;
+}

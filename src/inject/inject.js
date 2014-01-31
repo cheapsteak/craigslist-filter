@@ -150,7 +150,7 @@ function setupDrawing (map, region) {
     });
 }
 
-function inject (blacklist, filterRegion) {
+function inject (blacklist, filterRegion, mapVisible) {
     var unfilter = function () {
         $('.cf-filtered-row')
             .removeClass('cf-filtered-row') //modifying DOM
@@ -160,8 +160,14 @@ function inject (blacklist, filterRegion) {
     $('#searchtable').append(formHTML);
     
     // this can be broken out
-    var mapHTML = '<div id="cf-map" class="cf-map"></div>';
-    $('#toc_rows .content').prepend(mapHTML);
+    var mapToggleHTML = '<span class="cf-form searchgroup"><label><span>display region filter? </span><input id="cf-display-map" type="checkbox" ' + (mapVisible && 'checked') + '/></label><span>';
+    $('#searchtable').append(mapToggleHTML);
+
+
+
+    var mapHTML = '<div id="cf-map" class="cf-map ' + (mapVisible ? '' : 'cf-hidden') + '"></div>';
+    // var mapHTML = '<div id="cf-map" class="cf-map"></div>';
+    $('#searchtable').append(mapHTML);
 
     var map = setupMap();
     centerMap(map);
@@ -169,6 +175,17 @@ function inject (blacklist, filterRegion) {
     if (filterRegion.getLatLngs().length !== 0) {
         filterOnRegion(filterRegion);
     }
+
+    $('#cf-display-map').change(function () {
+        var mapVisible = $(this).prop('checked');
+        if (mapVisible) {
+            $('#cf-map').removeClass('cf-hidden');
+            map.invalidateSize();
+        } else {
+            $('#cf-map').addClass('cf-hidden');
+        }
+        chrome.storage.sync.set({"mapVisible": mapVisible});
+    });
     // ---end map specific
 
     $('#cf-blacklist').on('input', _.debounce(function (e) {
@@ -197,9 +214,9 @@ chrome.extension.sendMessage({}, function(response) {
 		clearInterval(readyStateCheckInterval);
 
         //check storage for existing blacklist
-        chrome.storage.sync.get(["blacklist","regionLatLngs"], function (data) {
+        chrome.storage.sync.get(['blacklist', 'regionLatLngs', 'mapVisible'], function (data) {
             var region = L.polygon(data['regionLatLngs'] || []);
-            inject(data['blacklist'], region); // should separate blacklist and region filters
+            inject(data['blacklist'], region, data['mapVisible']); // should separate blacklist and region filters
         });
 	}
 	}, 10);
