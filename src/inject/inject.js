@@ -55,9 +55,15 @@ function setupMap() {
 
 function centerMap(map) {
     var craigslistMapHref;
-    if (location.pathname.split('')[1]!=='search'){
-        craigslistMapHref = location.origin + '/search' + location.pathname + '?useMap=1';
-    } else {
+    if (location.href.indexOf('.html') !== -1) {
+        //e.g. http://toronto.en.craigslist.ca/apa/index100.html
+        //e.g. http://toronto.en.craigslist.ca/tor/apa/index100.html
+        console.log('branch 1');
+        craigslistMapHref = location.origin + '/search' + location.pathname.replace(/\/index\d+\.html/i,'') + '?useMap=1'
+    }
+    else {
+        console.log('branch 3');
+        //e.g. http://toronto.en.craigslist.ca/search/apa?zoomToPosting=&catAbb=apa&query=&minAsk=&maxAsk=700&bedrooms=&housing_type=&excats=
         craigslistMapHref = location.href + '&useMap=1';
     }
     /*
@@ -134,6 +140,8 @@ function setupDrawing (map, region) {
             }
         } else {
             latlngs = newPolygon.getLatLngs();
+            // mainPolygon.addTo(map); //in case previously deleted
+            mainPolygon.initialize(map);
         }
         mainPolygon.setLatLngs(latlngs);
         filterOnRegion(mainPolygon);//need to structure this better

@@ -1,6 +1,6 @@
 {
   "name": "Craigslist Filter",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "manifest_version": 2,
   "description": "Filter listings by location and keywords so undesired results don't waste your attention and time.",
   "homepage_url": "https://github.com/cheapsteak/craigslist-filter",
