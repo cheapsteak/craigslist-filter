@@ -116,6 +116,7 @@
         "js/lodash.min.js",
         "js/leaflet.js",
         "js/leaflet.draw.js",
+        "js/leaflet-pip.min.js",
         "js/paper-core.min.js",
         "src/inject/inject.js"
       ]

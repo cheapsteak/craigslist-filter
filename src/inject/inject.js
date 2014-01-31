@@ -1,4 +1,15 @@
 var rowSelector = '.content .row';
+leafletPip.bassackwards = true; //flips back to leaflet's default [lat, lng] convention
+paper.install(window);
+new Project();
+
+function polygonToPointsArray (map, polygon) {
+    return polygon
+        .getLatLngs().map(function (latlng) {
+            var point = map.latLngToLayerPoint(latlng);
+            return [point.x, point.y];
+        });
+}
 
 var filter = function (blacklist) {
     var blacklistExpr = new RegExp(blacklist.join('|'), 'i');
@@ -15,30 +26,46 @@ var filter = function (blacklist) {
         .highlight(blacklist, { element: 'em', className: 'cf-matched' });
 };
 
-function injectMap() {
-    var mapHTML = '<div id="cf-map" class="cf-map"></div>';
-    $('#toc_rows .content').prepend(mapHTML);
-    // var map = L.map('cf-map').setView([43.7, -79.4], 13);
+var filterOnRegion = function (polygon) {
+    $('.cf-filtered-region--pass').add('.cf-filtered-region--fail')
+        .removeClass('cf-filtered-region--pass cf-filtered-region--fail'); //clear previously filtered //reflows
+    if (polygon.getLatLngs().length === 0) {
+        return;
+    }
+    $('[data-latitude]').each(function () {
+        var lat = $(this).data('latitude');
+        var lng = $(this).data('longitude');
+        //note: polygon can be multiploygons
+        if ( leafletPip.pointInLayer([lat, lng], L.geoJson(polygon.toGeoJSON()) ).length !== 0) {
+            $(this).addClass('cf-filtered-region--pass'); //reflows
+        } else {
+            $(this).addClass('cf-filtered-region--fail'); //reflows
+        }
+    });
+};
+
+
+function setupMap() {
     var map = L.map('cf-map');
     L.tileLayer('http://{s}.tile.osm.org/{z}/{x}/{y}.png', {
         attribution: '&copy; <a href="http://osm.org/copyright">OpenStreetMap</a> contributors'
     }).addTo(map);
-    setupDrawing(map);
+    return map;
+}
 
+function centerMap(map) {
     var craigslistMapHref;
     if (location.pathname.split('')[1]!=='search'){
         craigslistMapHref = location.origin + '/search' + location.pathname + '?useMap=1';
     } else {
         craigslistMapHref = location.href + '&useMap=1';
     }
-
     /*
         Another way to go about this:
         areaId https://sites.google.com/site/clsiteinfo/area-id-sort
-        query for location or precompile a table with latlng
+        query for location or precompile a table with lat lng for each areaId
     */
-
-    $.get(craigslistMapHref).done(function (html) {
+    return $.get(craigslistMapHref).done(function (html) {
         var $html = $(html);
         var $dataHolder = $html.find('#mapcontainer').parent();
         var lat = $dataHolder.data('arealat');
@@ -47,7 +74,13 @@ function injectMap() {
     });
 }
 
-function setupDrawing (map) {
+var saveFilteringRegion = function(region) {
+    chrome.storage.sync.set({"regionLatLngs": region.getLatLngs().map(function (o) {
+        return [o.lat, o.lng];
+    })});
+};
+
+function setupDrawing (map, region) {
     // Initialise the FeatureGroup to store editable layers
     var drawnItems = new L.FeatureGroup();
     map.addLayer(drawnItems);
@@ -65,7 +98,7 @@ function setupDrawing (map) {
     });
     map.addControl(drawControl);
 
-    var mainPolygon = L.polygon([]);
+    var mainPolygon = region; //should rename all 'mainPolygon' to ~~~'filteringRegion'~~~ something better than `filteringRegion'
     drawnItems.addLayer(mainPolygon);
 
     map.on('draw:created', function (e) {
@@ -87,7 +120,7 @@ function setupDrawing (map) {
             
             if (isIntersecting) {
                 var unionedPointsArray = unionedPath.segments.map(function (segment) {
-                    return [segment.point.x, segment.point.y]
+                    return [segment.point.x, segment.point.y];
                 });
                 var unionedLatLngs = unionedPointsArray.map(function (pointArray) {
                     return map.layerPointToLatLng(L.point(pointArray[0], pointArray[1]));
@@ -95,18 +128,29 @@ function setupDrawing (map) {
 
                 latlngs = unionedLatLngs;
             } else {
-                //what do?
-                //create separate layer?
+                // ???
+                // create separate layer?
                 return;
             }
         } else {
             latlngs = newPolygon.getLatLngs();
         }
         mainPolygon.setLatLngs(latlngs);
+        filterOnRegion(mainPolygon);//need to structure this better
+        saveFilteringRegion(mainPolygon);
      });
+    map.on('draw:edited', function (e) {
+        filterOnRegion(mainPolygon);
+        saveFilteringRegion(mainPolygon);
+    });
+    map.on('draw:deleted', function (e) {
+        mainPolygon.setLatLngs([]);
+        filterOnRegion(mainPolygon);
+        saveFilteringRegion(mainPolygon);
+    });
 }
 
-function inject (blacklist) {
+function inject (blacklist, filterRegion) {
     var unfilter = function () {
         $('.cf-filtered-row')
             .removeClass('cf-filtered-row') //modifying DOM
@@ -115,7 +159,17 @@ function inject (blacklist) {
     var formHTML = '<span class="cf-form searchgroup"><label><span>blacklist words (comma separated): </span><input id="cf-blacklist" type="text" placeholder="e.g.: basement, bsmt" value="' + blacklist.join(', ') + '"/></label><span>';
     $('#searchtable').append(formHTML);
     
-    injectMap();
+    // this can be broken out
+    var mapHTML = '<div id="cf-map" class="cf-map"></div>';
+    $('#toc_rows .content').prepend(mapHTML);
+
+    var map = setupMap();
+    centerMap(map);
+    setupDrawing(map, filterRegion);
+    if (filterRegion.getLatLngs().length !== 0) {
+        filterOnRegion(filterRegion);
+    }
+    // ---end map specific
 
     $('#cf-blacklist').on('input', _.debounce(function (e) {
         //get new value
@@ -143,8 +197,9 @@ chrome.extension.sendMessage({}, function(response) {
 		clearInterval(readyStateCheckInterval);
 
         //check storage for existing blacklist
-        chrome.storage.sync.get("blacklist", function (data) {
-            inject(data.blacklist);
+        chrome.storage.sync.get(["blacklist","regionLatLngs"], function (data) {
+            var region = L.polygon(data['regionLatLngs'] || []);
+            inject(data['blacklist'], region); // should separate blacklist and region filters
         });
 	}
 	}, 10);
