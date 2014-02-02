@@ -55,13 +55,12 @@ function setupMap() {
 
 function centerMap(map) {
     var craigslistMapHref;
-    if (location.href.indexOf('.html') !== -1) {
+    if (location.href.indexOf('.html') !== -1 || location.pathname.split('/')[1] !== 'search') {
         //e.g. http://toronto.en.craigslist.ca/apa/index100.html
         //e.g. http://toronto.en.craigslist.ca/tor/apa/index100.html
         console.log('branch 1');
-        craigslistMapHref = location.origin + '/search' + location.pathname.replace(/\/index\d+\.html/i,'') + '?useMap=1'
-    }
-    else {
+        craigslistMapHref = location.origin + '/search' + location.pathname.replace(/\/index\d+\.html/i,'').replace(/\/$/,'') + '?useMap=1'
+    } else {
         console.log('branch 3');
         //e.g. http://toronto.en.craigslist.ca/search/apa?zoomToPosting=&catAbb=apa&query=&minAsk=&maxAsk=700&bedrooms=&housing_type=&excats=
         craigslistMapHref = location.href + '&useMap=1';
@@ -224,7 +223,9 @@ chrome.extension.sendMessage({}, function(response) {
         //check storage for existing blacklist
         chrome.storage.sync.get(['blacklist', 'regionLatLngs', 'mapVisible'], function (data) {
             var region = L.polygon(data['regionLatLngs'] || []);
-            inject(data['blacklist'], region, data['mapVisible']); // should separate blacklist and region filters
+            var blacklist = data['blacklist'] || [];
+            var mapVisible = data['mapVisible'] || false;
+            inject(blacklist, region, mapVisible); // should separate blacklist and region filters
         });
 	}
 	}, 10);
