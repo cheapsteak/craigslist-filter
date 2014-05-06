@@ -26,20 +26,28 @@ var filter = function (blacklist) {
         .highlight(blacklist, { element: 'em', className: 'cf-matched' });
 };
 
-var filterOnRegion = function (polygon) {
+var filterOnRegion = function (polygon, listings) { // TODO: DECOUPLE this shouldn't have to know about listings
     $('.cf-filtered-region--pass').add('.cf-filtered-region--fail')
         .removeClass('cf-filtered-region--pass cf-filtered-region--fail'); //clear previously filtered //reflows
     if (polygon.getLatLngs().length === 0) {
         return;
     }
-    $('[data-latitude]').each(function () {
-        var lat = $(this).data('latitude');
-        var lng = $(this).data('longitude');
-        //note: polygon can be multiploygons
-        if ( leafletPip.pointInLayer([lat, lng], L.geoJson(polygon.toGeoJSON()) ).length !== 0) {
-            $(this).addClass('cf-filtered-region--pass'); //reflows
-        } else {
-            $(this).addClass('cf-filtered-region--fail'); //reflows
+
+    //NOTE: PostingID is a string in the JSON data
+    $('[data-pid]').each(function () {
+        var pid = $(this).attr('data-pid');
+        // NOTE: not sure why some pids are undefined. 
+        // perhaps they don't have an associated lat & lng?
+        // or maybe it's a paging issue / got cut off from the JSON?
+        if (listings[pid]) {
+            var lat = listings[pid].Latitude;
+            var lng = listings[pid].Longitude;
+            //note: polygon can be multiploygons
+            if ( leafletPip.pointInLayer([lat, lng], L.geoJson(polygon.toGeoJSON()) ).length !== 0) {
+                $(this).addClass('cf-filtered-region--pass'); //reflows
+            } else {
+                $(this).addClass('cf-filtered-region--fail'); //reflows
+            }
         }
     });
 };
@@ -53,39 +61,13 @@ function setupMap() {
     return map;
 }
 
-function centerMap(map) {
-    var craigslistMapHref;
-    if (location.href.indexOf('.html') !== -1 || location.pathname.split('/')[1] !== 'search') {
-        //e.g. http://toronto.en.craigslist.ca/apa/index100.html
-        //e.g. http://toronto.en.craigslist.ca/tor/apa/index100.html
-        console.log('branch 1');
-        craigslistMapHref = location.origin + '/search' + location.pathname.replace(/\/index\d+\.html/i,'').replace(/\/$/,'') + '?useMap=1'
-    } else {
-        console.log('branch 3');
-        //e.g. http://toronto.en.craigslist.ca/search/apa?zoomToPosting=&catAbb=apa&query=&minAsk=&maxAsk=700&bedrooms=&housing_type=&excats=
-        craigslistMapHref = location.href + '&useMap=1';
-    }
-    /*
-        Another way to go about this:
-        areaId https://sites.google.com/site/clsiteinfo/area-id-sort
-        query for location or precompile a table with lat lng for each areaId
-    */
-    return $.get(craigslistMapHref).done(function (html) {
-        var $html = $(html);
-        var $dataHolder = $html.find('#mapcontainer').parent();
-        var lat = $dataHolder.data('arealat');
-        var lng = $dataHolder.data('arealon');
-        map.setView([lat, lng], 13);
-    });
-}
-
 var saveFilteringRegion = function(region) {
     chrome.storage.sync.set({"regionLatLngs": region.getLatLngs().map(function (o) {
         return [o.lat, o.lng];
     })});
 };
 
-function setupDrawing (map, region) {
+function setupDrawing (map, region, listings) { // TODO: DECOUPLE! this shouldn't have to know about listings
     // Initialise the FeatureGroup to store editable layers
     var drawnItems = new L.FeatureGroup();
     map.addLayer(drawnItems);
@@ -143,16 +125,16 @@ function setupDrawing (map, region) {
             mainPolygon.initialize(map);
         }
         mainPolygon.setLatLngs(latlngs);
-        filterOnRegion(mainPolygon);//need to structure this better
+        filterOnRegion(mainPolygon, listings);//need to structure this better
         saveFilteringRegion(mainPolygon);
      });
     map.on('draw:edited', function (e) {
-        filterOnRegion(mainPolygon);
+        filterOnRegion(mainPolygon, listings); // TODO: DECOUPLE
         saveFilteringRegion(mainPolygon);
     });
     map.on('draw:deleted', function (e) {
         mainPolygon.setLatLngs([]);
-        filterOnRegion(mainPolygon);
+        filterOnRegion(mainPolygon, listings); // TODO: DECOUPLE
         saveFilteringRegion(mainPolygon);
     });
 }
@@ -176,22 +158,26 @@ function inject (blacklist, filterRegion, mapVisible) {
     // var mapHTML = '<div id="cf-map" class="cf-map"></div>';
     $('#searchtable').append(mapHTML);
 
-    var map = setupMap();
-    centerMap(map);
-    setupDrawing(map, filterRegion);
-    if (filterRegion.getLatLngs().length !== 0) {
-        filterOnRegion(filterRegion);
-    }
-
-    $('#cf-display-map').change(function () {
-        var mapVisible = $(this).prop('checked');
-        if (mapVisible) {
-            $('#cf-map').removeClass('cf-hidden');
-            map.invalidateSize();
-        } else {
-            $('#cf-map').addClass('cf-hidden');
+    getListings().done(function (listings) {
+        var map = setupMap();
+        var centerLat = $('#mapcontainer').data('arealat') || listings._center.lat;
+        var centerLng = $('#mapcontainer').data('arealon') || listings._center.lng;
+        map.setView([centerLat, centerLng], 13);
+        setupDrawing(map, filterRegion, listings);
+        if (filterRegion.getLatLngs().length !== 0) {
+            filterOnRegion(filterRegion, listings);
         }
-        chrome.storage.sync.set({"mapVisible": mapVisible});
+
+        $('#cf-display-map').change(function () {
+            var mapVisible = $(this).prop('checked');
+            if (mapVisible) {
+                $('#cf-map').removeClass('cf-hidden');
+                map.invalidateSize();
+            } else {
+                $('#cf-map').addClass('cf-hidden');
+            }
+            chrome.storage.sync.set({"mapVisible": mapVisible});
+        });
     });
     // ---end map specific
 
@@ -231,16 +217,52 @@ chrome.extension.sendMessage({}, function(response) {
 	}, 10);
 });
 
-function scrapeCoords () {
-    return $(rowsSelector + '[data-latitude][data-longitude]').map(function (i, el) {
-        var $el = $(el);
-        return {
-            pid: $el.data('pid'),
-            lat: $el.data('latitude'),
-            lng: $el.data('longitude')
+function getListings () {
+    var deferred = $.Deferred();
+
+    var queryString = window.location.search;
+    var pathConstituents = window.location.pathname.split('/');
+    var jsonUrl;
+
+    // if first non-empty pathConstituent is 'search'
+    if (location.pathname.split('/')[1] === 'search') {
+        jsonUrl = '/json' + location.pathname.substr(1) + location.search;
+    } else {
+        // e.g.
+        // http://toronto.en.craigslist.ca/tor/apa/index100.html
+        // http://toronto.en.craigslist.ca/apa/
+        jsonUrl = '/jsonsearch' + location.pathname + location.search;
+    }
+
+    $.get('/jsonsearch' + location.pathname + location.search).done(function (data) {
+        var listings = {};
+        //hashListings(data[0]);
+        var aggregateLat = 0;
+        var aggregateLng = 0;
+
+        data[0].forEach(function (item) {
+            listings[item.PostingID] = item;
+            aggregateLat += item.Latitude;
+            aggregateLng += item.Longitude;
+        });
+
+        // this gives same result as the one from data[1]
+        // listings._center = {
+        //     lat: aggregateLat / data[0].length,
+        //     lng: aggregateLng / data[0].length
+        // };
+
+        // this center is bogus. returns center of lake
+        listings._center = {
+            lat: data[1].clat,
+            lng: data[1].clng
         };
+        deferred.resolve(listings);
     });
+
+    return deferred.promise()
 }
+
 
 function calcBounds(coords) {
     var lats = _.pluck(coords, 'lat').map(parseFloat);
