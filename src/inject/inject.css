@@ -12,9 +12,26 @@
 .cf-filtered-region--pass {
     background-color: #C8E2FD;
 }
+.cf-filtered-region--wtf {
+    /*background-color: #fffce8;*/
+}
 .cf-filtered-region--fail {
-    /*nothing for now*/
+    background-color: #f0f0f0;
 }
 .cf-hidden {
     display: none;
+}
+
+.cf-loading {
+  font-size: 12px;
+}
+
+.cf-checkbox {
+  width: 18px;
+  height: 18px;
+  vertical-align: middle;
+}
+
+#toc_rows .ban.cf-ban .bantext {
+  font-weight: bold;
 }

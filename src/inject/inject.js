@@ -1,3 +1,17 @@
+/*
+format of a single listing
+Ask: "3300"
+Bedrooms: "3"
+CategoryID: "1"
+ImageThumb: "http://images.craigslist.org/01616_oXcia3hxjG_50x50c.jpg"
+Latitude: 43.746015
+Longitude: -79.336377
+PostedDate: "1399342246"
+PostingID: "4445813178"
+PostingTitle: "WELL PRICED 3 bedroom house! Toronto Luxury Rentals"
+PostingURL: "/tor/apa/4445813178.html"
+*/
+
 var rowSelector = '.content .row';
 leafletPip.bassackwards = true; //flips back to leaflet's default [lat, lng] convention
 paper.install(window);
@@ -26,7 +40,7 @@ var filter = function (blacklist) {
         .highlight(blacklist, { element: 'em', className: 'cf-matched' });
 };
 
-var filterOnRegion = function (polygon, listings) { // TODO: DECOUPLE this shouldn't have to know about listings
+var regionChanged = function (polygon, listings) { // TODO: DECOUPLE this shouldn't have to know about listings
     $('.cf-filtered-region--pass').add('.cf-filtered-region--fail')
         .removeClass('cf-filtered-region--pass cf-filtered-region--fail'); //clear previously filtered //reflows
     if (polygon.getLatLngs().length === 0) {
@@ -34,26 +48,50 @@ var filterOnRegion = function (polygon, listings) { // TODO: DECOUPLE this shoul
     }
 
     //NOTE: PostingID is a string in the JSON data
-    $('[data-pid]').each(function () {
+    $('.row[data-pid]').each(function () {
         var pid = $(this).attr('data-pid');
-        // NOTE: not sure why some pids are undefined. 
+        // NOTE: not sure why some listings[pids] are undefined. 
         // perhaps they don't have an associated lat & lng?
         // or maybe it's a paging issue / got cut off from the JSON?
+
+        // probably because of clusters with renewed listings like this
+        // http://toronto.en.craigslist.ca/jsonsearch/apa/tor?geocluster=113030659654&key=0SNVYb1sgukhvVlkbQKtiA
+        // the pid in the main JSON list (e.g. http://toronto.en.craigslist.ca/jsonsearch/tor/apa/index200.html) is not always the most recent
+        // and the most recent one is the one in the webpage's markup
         if (listings[pid]) {
             var lat = listings[pid].Latitude;
             var lng = listings[pid].Longitude;
             //note: polygon can be multiploygons
             if ( leafletPip.pointInLayer([lat, lng], L.geoJson(polygon.toGeoJSON()) ).length !== 0) {
-                $(this).addClass('cf-filtered-region--pass'); //reflows
+                $(this).addClass('cf-filtered-region--pass');
             } else {
-                $(this).addClass('cf-filtered-region--fail'); //reflows
+                $(this).addClass('cf-filtered-region--fail');
             }
+        } else {
+            $(this).addClass('cf-filtered-region--wtf');
         }
     });
+
+    hoistListings();
+};
+
+var hoistListings = function () {
+    var matchedListings = $('.row.cf-filtered-region--pass').detach();
+    var unsureListings = $('.row.cf-filtered-region--wtf').detach();
+
+    var fragment = $(document.createDocumentFragment());
+    fragment
+        .append('<h4 class="ban cf-ban"><span class="bantext">Definitely within filtered region</span></h4>')
+        .append(matchedListings)
+        .append('<h4 class="ban cf-ban"><span class="bantext">Not sure if within filtered region (sorry..wish I could do better. <a href="https://github.com/cheapsteak/craigslist-filter/issues/1">suggestions welcome</a>)</span></h4>')
+        .append(unsureListings)
+        .append('<h4 class="ban cf-ban"><span class="bantext">Definitely outside filtered region</span></h4>')
+        .prependTo('.content');
 };
 
 
 function setupMap() {
+    L.Map.include(L.LayerIndexMixin); // for layerindex
     var map = L.map('cf-map');
     L.tileLayer('http://{s}.tile.osm.org/{z}/{x}/{y}.png', {
         attribution: '&copy; <a href="http://osm.org/copyright">OpenStreetMap</a> contributors'
@@ -85,7 +123,7 @@ function setupDrawing (map, region, listings) { // TODO: DECOUPLE! this shouldn'
     });
     map.addControl(drawControl);
 
-    var mainPolygon = region; //should rename all 'mainPolygon' to ~~~'filteringRegion'~~~ something better than `filteringRegion'
+    var mainPolygon = region; //should rename all 'mainPolygon' to ~~'filteringRegion'~~ something better than `filteringRegion'
     drawnItems.addLayer(mainPolygon);
 
     map.on('draw:created', function (e) {
@@ -116,7 +154,7 @@ function setupDrawing (map, region, listings) { // TODO: DECOUPLE! this shouldn'
                 latlngs = unionedLatLngs;
             } else {
                 // ???
-                // create separate layer?
+                // create separate layer? but then complications with possibility of intersecting layers
                 return;
             }
         } else {
@@ -125,19 +163,41 @@ function setupDrawing (map, region, listings) { // TODO: DECOUPLE! this shouldn'
             mainPolygon.initialize(map);
         }
         mainPolygon.setLatLngs(latlngs);
-        filterOnRegion(mainPolygon, listings);//need to structure this better
+        regionChanged(mainPolygon, listings);//need to structure this better
         saveFilteringRegion(mainPolygon);
      });
     map.on('draw:edited', function (e) {
-        filterOnRegion(mainPolygon, listings); // TODO: DECOUPLE
+        regionChanged(mainPolygon, listings); // TODO: DECOUPLE
         saveFilteringRegion(mainPolygon);
     });
     map.on('draw:deleted', function (e) {
         mainPolygon.setLatLngs([]);
-        filterOnRegion(mainPolygon, listings); // TODO: DECOUPLE
+        regionChanged(mainPolygon, listings); // TODO: DECOUPLE
         saveFilteringRegion(mainPolygon);
     });
 }
+
+function plotListings(map, listings) {
+    Object.keys(listings).forEach(function(key) {
+        var listing = listings[key];
+        if (!listing.Latitude || !listing.Longitude) {
+            return;
+        }
+        var measle = L.circleMarker(L.latLng([listing.Latitude, listing.Longitude]), {radius:1, color: '#c00', fillColor: '#c00'}).addTo(map);
+        map.indexLayer(measle);
+        // TODO: do something when user clicks on a marker
+        // if (!listing.PostingTitle) {
+        //     // this posting has been "renewed", and thus has multiple content data (most importantly, image and title)
+        //     // e.g. http://toronto.en.craigslist.ca/jsonsearch/apa/tor?geocluster=113030658923&key=HtiSrdr6Na9wV1OEgdsUYA
+        //     //{"Longitude":-79.6001097407708,"NumPosts":"2","PostedDate":"1399324984","GeoCluster":"113030734929","PostingID":"4416076632","url":"/jsonsearch/apa/tor?geocluster=113030734929&key=Ntl4lmnPBteCgRvbKuEtrw","Latitude":43.7428066415866}
+        // } else {
+        //     // measle.bindPopup('<a href="'+listing.PostingURL+'">' + listing.PostingTitle + '</a>');
+        // }
+        measle.on('click', function () {
+            console.log('listing at '+ key, listing);
+        });
+    });
+};
 
 function inject (blacklist, filterRegion, mapVisible) {
     var unfilter = function () {
@@ -149,23 +209,22 @@ function inject (blacklist, filterRegion, mapVisible) {
     $('#searchtable').append(formHTML);
     
     // this can be broken out
-    var mapToggleHTML = '<span class="cf-form searchgroup"><label><span>display region filter? </span><input id="cf-display-map" type="checkbox" ' + (mapVisible && 'checked') + '/></label><span>';
+    var mapToggleHTML = '<span class="cf-form searchgroup"><label><span>display region filter? </span><input id="cf-display-map" class="cf-checkbox" type="checkbox" ' + (mapVisible && 'checked') + '/></label><span>';
     $('#searchtable').append(mapToggleHTML);
 
-
-
-    var mapHTML = '<div id="cf-map" class="cf-map ' + (mapVisible ? '' : 'cf-hidden') + '"></div>';
-    // var mapHTML = '<div id="cf-map" class="cf-map"></div>';
+    var mapHTML = '<div id="cf-map" class="cf-map ' + (mapVisible ? '' : 'cf-hidden') + '"><span class="cf-loading">loading...</span></div>';
     $('#searchtable').append(mapHTML);
 
     getListings().done(function (listings) {
+        window.listings = listings;
         var map = setupMap();
         var centerLat = $('#mapcontainer').data('arealat') || listings._center.lat;
         var centerLng = $('#mapcontainer').data('arealon') || listings._center.lng;
         map.setView([centerLat, centerLng], 13);
         setupDrawing(map, filterRegion, listings);
+        plotListings(map, listings);
         if (filterRegion.getLatLngs().length !== 0) {
-            filterOnRegion(filterRegion, listings);
+            regionChanged(filterRegion, listings);
         }
 
         $('#cf-display-map').change(function () {
@@ -190,7 +249,6 @@ function inject (blacklist, filterRegion, mapVisible) {
             });
         //update storage
         chrome.storage.sync.set({"blacklist": blacklist});
-        //DONT wait for cb. run filter with new value
         unfilter();
         if (blacklist.length > 0) {
             filter(blacklist);
@@ -246,12 +304,6 @@ function getListings () {
             aggregateLng += item.Longitude;
         });
 
-        // this gives same result as the one from data[1]
-        // listings._center = {
-        //     lat: aggregateLat / data[0].length,
-        //     lng: aggregateLng / data[0].length
-        // };
-
         // this center is bogus. returns center of lake
         listings._center = {
             lat: data[1].clat,
@@ -261,18 +313,4 @@ function getListings () {
     });
 
     return deferred.promise()
-}
-
-
-function calcBounds(coords) {
-    var lats = _.pluck(coords, 'lat').map(parseFloat);
-    var lngs = _.pluck(coords, 'lng').map(parseFloat);
-    //var avgLat = lats.reduce( function (a, b) { return a + b;} );
-    //var avgLng = lats.reduce( function (a, b) { return a + b;} );
-    return {
-        minLat : Math.min.apply(null, lats),
-        maxLat : Math.max.apply(null, lats),
-        minLng : Math.min.apply(null, lngs),
-        maxLng : Math.max.apply(null, lngs)
-    };
 }

@@ -1,6 +1,6 @@
 {
   "name": "Craigslist Filter",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "manifest_version": 2,
   "description": "Filter listings by location and keywords so undesired results don't waste your attention and time.",
   "homepage_url": "https://github.com/cheapsteak/craigslist-filter",
@@ -114,9 +114,11 @@
         "js/jquery.min.js",
         "js/jquery.highlight.js",
         "js/lodash.min.js",
+        "js/rtree.js",
         "js/leaflet.js",
         "js/leaflet.draw.js",
         "js/leaflet-pip.min.js",
+        "js/leaflet.layerindex.js",
         "js/paper-core.min.js",
         "src/inject/inject.js"
       ]
